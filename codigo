@@ -1,0 +1,189 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.linear_model import Lasso, Ridge
+from sklearn.model_selection import GridSearchCV, cross_val_score
+
+# 1. Cargar el dataset
+file_path = "/Users/Rolando Mora/PycharmProjects/Entregable02/.venv/data/week3.csv"
+with open(file_path, 'r') as file:
+    lines = file.readlines()
+
+# Separar los valores por comas y convertirlo a un DataFrame
+data = [line.strip().split(',') for line in lines]
+df = pd.DataFrame(data)
+df = df.drop(0)
+df.columns = ['Feature_1', 'Feature_2', 'Target']
+df = df.apply(pd.to_numeric)
+
+X = df[['Feature_1', 'Feature_2']].values
+y = df['Target'].values
+
+# 2. Graficar datos en 3D
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+ax.scatter(X[:, 0], X[:, 1], y)
+ax.set_xlabel('Variable de entrada 1')
+ax.set_ylabel('Variable de entrada 2')
+ax.set_zlabel('Variable Objetivo')
+ax.set_title('Gráfico de dispersión 3D')
+plt.show()
+plt.savefig("Figura01.png")
+
+# 3. Generar características polinómicas
+poly = PolynomialFeatures(degree=5)
+X_poly = poly.fit_transform(X)
+
+# 4. Entrenar modelos Lasso para diferentes valores de C
+C_values = [1, 10, 1000]
+alpha_values = [1 / (2 * C) for C in C_values]
+lasso_models = {}
+for alpha in alpha_values:
+    lasso = Lasso(alpha=alpha)
+    lasso.fit(X_poly, y)
+    lasso_models[alpha] = lasso
+
+# 5. Imprimir los coeficientes de los modelos Lasso
+print("Coeficientes de los modelos Lasso:")
+for alpha, model in lasso_models.items():
+    print(f"alpha = {alpha:.5f}")
+    coef_dict = dict(zip(poly.get_feature_names_out(), model.coef_))
+    for feature, coef in coef_dict.items():
+        print(f"{feature}: {coef:.5f}")
+    print("\n")
+
+# 6. Repetir para Ridge
+ridge_models = {}
+for alpha in alpha_values:
+    ridge = Ridge(alpha=alpha)
+    ridge.fit(X_poly, y)
+    ridge_models[alpha] = ridge
+
+# 7. Imprimir los coeficientes de los modelos Ridge
+print("Coeficientes de los modelos Ridge:")
+for alpha, model in ridge_models.items():
+    print(f"alpha = {alpha:.5f}")
+    coef_dict = dict(zip(poly.get_feature_names_out(), model.coef_))
+    for feature, coef in coef_dict.items():
+        print(f"{feature}: {coef:.5f}")
+    print("\n")
+
+
+# 8. Buscar el mejor valor de C usando GridSearchCV para Lasso y Ridge
+def find_best_C(model_class, X_poly, y, C_range):
+    # Convertir el rango de C a un diccionario de hiperparámetros de alpha
+    param_grid = {'alpha': [1 / (2 * C) for C in C_range]}
+
+    # Inicializar GridSearchCV con 5 particiones
+    grid_search = GridSearchCV(model_class(), param_grid, cv=5, scoring='neg_mean_squared_error')
+
+    # Ajustar el modelo
+    grid_search.fit(X_poly, y)
+
+    # Retornar el mejor valor de alpha (y por lo tanto el mejor valor de C)
+    best_alpha = grid_search.best_params_['alpha']
+    best_C = 1 / (2 * best_alpha)
+
+    return best_C, grid_search.best_score_
+
+
+# Definir un rango más amplio de valores de C
+C_range = np.logspace(-4, 4, 50)
+
+# Encontrar el mejor valor de C para Lasso
+best_C_lasso, best_score_lasso = find_best_C(Lasso, X_poly, y, C_range)
+print(f"Mejor valor de C para Lasso: {best_C_lasso:.5f}, con un error cuadrático medio de: {abs(best_score_lasso):.5f}")
+
+# Encontrar el mejor valor de C para Ridge
+best_C_ridge, best_score_ridge = find_best_C(Ridge, X_poly, y, C_range)
+print(f"Mejor valor de C para Ridge: {best_C_ridge:.5f}, con un error cuadrático medio de: {abs(best_score_ridge):.5f}")
+
+# 9. Graficar predicciones en 3D
+grid = np.linspace(-5, 5, 50)
+Xtest = np.array([[i, j] for i in grid for j in grid])
+Xtest_poly = poly.transform(Xtest)
+
+fig = plt.figure(figsize=(14, 8))
+for i, (alpha, model) in enumerate(lasso_models.items()):
+    prediction = model.predict(Xtest_poly)
+    ax = fig.add_subplot(1, len(lasso_models), i + 1, projection='3d')
+    ax.scatter(X[:, 0], X[:, 1], y, color='red')
+    ax.plot_surface(Xtest[:, 0].reshape(50, 50), Xtest[:, 1].reshape(50, 50),
+                    prediction.reshape(50, 50), alpha=0.5, cmap='viridis')
+    ax.set_title(f'Modelo de Regresión Lasso con (alpha={alpha:.5f})')
+    ax.set_xlabel('Variable de entrada 1')
+    ax.set_ylabel('Variable de entrada 2')
+    ax.set_zlabel('Variable Objetivo')
+plt.tight_layout()
+plt.show()
+plt.savefig("Figura02.png")
+
+# Graficar para Ridge
+fig = plt.figure(figsize=(14, 8))
+for i, (alpha, model) in enumerate(ridge_models.items()):
+    prediction = model.predict(Xtest_poly)
+    ax = fig.add_subplot(1, len(ridge_models), i + 1, projection='3d')
+    ax.scatter(X[:, 0], X[:, 1], y, color='red')
+    ax.plot_surface(Xtest[:, 0].reshape(50, 50), Xtest[:, 1].reshape(50, 50),
+                    prediction.reshape(50, 50), alpha=0.5, cmap='viridis')
+    ax.set_title(f'Modelo de Regresión Ridge con (alpha={alpha:.5f})')
+    ax.set_xlabel('Variable de entrada 1')
+    ax.set_ylabel('Variable de entrada 2')
+    ax.set_zlabel('Variable Objetivo')
+plt.tight_layout()
+plt.show()
+plt.savefig("Figura03.png")
+
+
+# 10. Agregar las gráficas de validación cruzada y el mejor valor de C
+def cross_validate_model(model_class, X_poly, y, C_range):
+    mean_scores = []
+    std_scores = []
+
+    for C in C_range:
+        alpha = 1 / (2 * C)
+        model = model_class(alpha=alpha)
+        # Validación cruzada de 5 particiones
+        scores = cross_val_score(model, X_poly, y, cv=5, scoring='neg_mean_squared_error')
+        mean_scores.append(np.mean(scores))
+        std_scores.append(np.std(scores))
+
+    return np.array(mean_scores), np.array(std_scores)
+
+
+# Validación cruzada para Lasso
+lasso_mean_scores, lasso_std_scores = cross_validate_model(Lasso, X_poly, y, C_range)
+best_C_lasso_cv = C_range[np.argmax(lasso_mean_scores)]
+
+# Graficar los resultados de la validación cruzada para Lasso
+plt.figure(figsize=(8, 6))
+plt.errorbar(C_range, -lasso_mean_scores, yerr=lasso_std_scores, label='Lasso', fmt='-o')
+plt.xscale('log')
+plt.axvline(x=best_C_lasso_cv, color='r', linestyle='--', label=f'Mejor valor C: {best_C_lasso_cv:.5f}')
+plt.xlabel('C (escala log)')
+plt.ylabel('Error Cuadrático Medio')
+plt.title('Validación Cruzada del Error - Modelo Lasso')
+plt.legend()
+plt.show()
+plt.savefig("Figura04.png")
+
+# Validación cruzada para Ridge
+ridge_mean_scores, ridge_std_scores = cross_validate_model(Ridge, X_poly, y, C_range)
+best_C_ridge_cv = C_range[np.argmax(ridge_mean_scores)]
+
+# Graficar los resultados de la validación cruzada para Ridge
+plt.figure(figsize=(8, 6))
+plt.errorbar(C_range, -ridge_mean_scores, yerr=ridge_std_scores, label='Ridge', fmt='-o')
+plt.xscale('log')
+plt.axvline(x=best_C_ridge_cv, color='r', linestyle='--', label=f'Mejor valor C: {best_C_ridge_cv:.5f}')
+plt.xlabel('C (escala log)')
+plt.ylabel('Error Cuadrático Medio')
+plt.title('Validación Cruzada del Error - Modelo Ridge')
+plt.legend()
+plt.show()
+plt.savefig("Figura05.png")
+
+print(f"Mejor valor de C para Lasso (gráfica de validación cruzada): {best_C_lasso_cv:.5f}")
+print(f"Mejor valor de C para Ridge (gráfica de validación cruzada): {best_C_ridge_cv:.5f}")
